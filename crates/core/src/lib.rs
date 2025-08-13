@@ -1,31 +1,19 @@
 pub mod agent;
-pub mod gemini_reviewer;
+pub mod curriculum;
 pub mod generic_types;
+pub mod llm_client;
 pub mod realtime_api;
-pub mod reviewer;
-pub mod session_state;
 pub mod topic;
 
-/// Represents commands that the core logic (`FeynmanSession`) issues to the runtime.
+/// Represents commands that the core logic issues to an external runtime.
 ///
-/// This enum is the primary API for decoupling the session's decision-making
-/// from the runtime's execution of side effects (like speaking text).
+/// This enum is the primary API for decoupling the agent's decision-making
+/// from the runtime's execution of side effects (like speaking text or
+/// finalizing a session).
 #[derive(Debug, Clone)]
 pub enum Command {
     /// Command the runtime to speak the given text to the user.
     SpeakText(String),
     /// Command indicating the session is complete, with a final message.
     SessionComplete(String),
-}
-
-// NOTE This Input enum is specific to the `feynman-service` runtime.
-// It is temporarily placed here to integrate 6c6063f
-// A future refactor should move this into the `feynman-service` crate itself.
-pub enum Input {
-    Audio(Vec<f32>),
-    Initialize(),
-    Initialized(),
-    AISpeaking(),
-    AISpeakingDone(),
-    CreateSpokenResponse(String),
 }

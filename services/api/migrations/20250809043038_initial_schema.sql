@@ -22,7 +22,6 @@ CREATE TABLE messages (
 );
 
 -- Table to store the JSON blob of the agent's state.
--- Using a separate table allows for state versioning in the future if needed.
 CREATE TABLE agent_states (
     id BIGSERIAL PRIMARY KEY,
     session_id UUID NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,

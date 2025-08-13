@@ -31,7 +31,7 @@ export default function Settings() {
   const [micGain, setMicGain] = useState([70]);
 
   function handleSave() {
-    toast("Settings saved", {
+    toast("Settings saved (mock)", {
       description: "Your preferences have been updated.",
     });
   }
@@ -87,7 +87,7 @@ export default function Settings() {
               <div className="sm:col-span-2">
                 <Button
                   onClick={handleSave}
-                  className="bg-emerald-600 hover:bg-emerald-700"
+                  className="bg-primary hover:bg-emerald-700"
                 >
                   Save changes
                 </Button>
@@ -146,7 +146,7 @@ export default function Settings() {
               <div>
                 <Button
                   onClick={handleSave}
-                  className="bg-emerald-600 hover:bg-emerald-700"
+                  className="bg-primary hover:bg-emerald-700"
                 >
                   Save preferences
                 </Button>
@@ -198,7 +198,7 @@ export default function Settings() {
               </div>
               <Button
                 onClick={handleSave}
-                className="bg-emerald-600 hover:bg-emerald-700"
+                className="bg-primary hover:bg-emerald-700"
               >
                 Save audio settings
               </Button>

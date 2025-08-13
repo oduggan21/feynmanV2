@@ -22,13 +22,20 @@ import {
   CardHeader,
   CardTitle,
 } from "@revlentless/ui/components/card";
-import { useMockData } from "~/providers/mock-data-provider";
-import { ArrowRight, Filter, Plus } from "lucide-react";
+import { useListSessions } from "@workspace/feynman-query";
+import { ArrowRight, Filter, Plus, Loader2 } from "lucide-react";
 import { Progress } from "@revlentless/ui/components/progress";
 import { useMemo, useState } from "react";
+import type { Session } from "@workspace/feynman-query/schemas";
 
 export default function SessionsList() {
-  const { sessions, computeOverallPercent } = useMockData();
+  const { data: response, isLoading, isError } = useListSessions();
+
+  // FIX: safely ensure sessions is always an array
+  const sessions: Session[] = Array.isArray(response?.data)
+    ? response.data
+    : [];
+
   const [query, setQuery] = useState("");
 
   const filtered = useMemo(
@@ -53,7 +60,7 @@ export default function SessionsList() {
             Browse and manage your teaching sessions.
           </p>
         </div>
-        <Button asChild className="bg-emerald-600 hover:bg-emerald-700">
+        <Button asChild className="bg-primary hover:bg-emerald-700">
           <Link to="/sessions/new?topic=Data%20Structures">
             <Plus className="mr-2 h-4 w-4" />
             New Session
@@ -80,21 +87,16 @@ export default function SessionsList() {
         </TabsList>
 
         <TabsContent value="active" className="mt-4">
-          <SessionTable
-            rows={active}
-            computeOverallPercent={computeOverallPercent}
-          />
+          <SessionTable rows={active} isLoading={isLoading} isError={isError} />
         </TabsContent>
         <TabsContent value="ended" className="mt-4">
-          <SessionTable
-            rows={ended}
-            computeOverallPercent={computeOverallPercent}
-          />
+          <SessionTable rows={ended} isLoading={isLoading} isError={isError} />
         </TabsContent>
         <TabsContent value="all" className="mt-4">
           <SessionTable
             rows={filtered}
-            computeOverallPercent={computeOverallPercent}
+            isLoading={isLoading}
+            isError={isError}
           />
         </TabsContent>
       </Tabs>
@@ -104,10 +106,12 @@ export default function SessionsList() {
 
 function SessionTable({
   rows,
-  computeOverallPercent,
+  isLoading,
+  isError,
 }: {
-  rows: ReturnType<typeof useMockData>["sessions"];
-  computeOverallPercent: (subtopics: any) => number;
+  rows: Session[];
+  isLoading: boolean;
+  isError: boolean;
 }) {
   return (
     <Card>
@@ -126,7 +130,22 @@ function SessionTable({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {rows.length === 0 ? (
+            {isLoading ? (
+              <TableRow>
+                <TableCell colSpan={5} className="text-center">
+                  <div className="flex items-center justify-center gap-2 text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Loading sessions...
+                  </div>
+                </TableCell>
+              </TableRow>
+            ) : isError ? (
+              <TableRow>
+                <TableCell colSpan={5} className="text-center text-red-600">
+                  Failed to load sessions.
+                </TableCell>
+              </TableRow>
+            ) : rows.length === 0 ? (
               <TableRow>
                 <TableCell
                   colSpan={5}
@@ -137,7 +156,7 @@ function SessionTable({
               </TableRow>
             ) : (
               rows.map((s) => {
-                const pct = computeOverallPercent(s.subtopics);
+                const pct = 0; // Progress is handled elsewhere
                 return (
                   <TableRow key={s.id}>
                     <TableCell className="font-medium">{s.topic}</TableCell>

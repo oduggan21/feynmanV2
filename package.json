@@ -9,5 +9,11 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "packageManager": "pnpm@10.12.4"
+  "packageManager": "pnpm@10.12.4",
+  "devDependencies": {
+    "@orval/core": "^7.11.2"
+  },
+  "dependencies": {
+    "@google/genai": "^1.13.0"
+  }
 }

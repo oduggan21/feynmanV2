@@ -1,4 +1,3 @@
-
 //! Feynman Agent Service
 //!
 //! This module implements the core Feynman learning agent that tracks educational progress
@@ -7,9 +6,10 @@
 
 use crate::topic::SubTopic;
 use rmcp::{
+    ServerHandler,
     handler::server::{router::tool::ToolRouter, tool::Parameters},
     model::{ServerCapabilities, ServerInfo},
-    tool, tool_handler, tool_router, ServerHandler,
+    tool, tool_handler, tool_router,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};

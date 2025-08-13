@@ -27,5 +27,3 @@ node_modules
 
 # dev
 grinchset.txt
-docker-compose.yaml
-services/api/prompts

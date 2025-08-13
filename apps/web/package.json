@@ -16,6 +16,7 @@
     "@revlentless/ui": "workspace:*",
     "@revlentless/ui-particle-fx": "workspace:*",
     "@revlentless/ui-theme": "workspace:*",
+    "@workspace/feynman-query": "workspace:*",
     "@tanstack/react-query": "^5.83.0",
     "axios": "^1.10.0",
     "culori": "^4.0.2",

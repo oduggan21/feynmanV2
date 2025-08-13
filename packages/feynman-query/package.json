@@ -1,0 +1,31 @@
+{
+  "name": "@workspace/feynman-query",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "type": "module",
+  "exports": {
+    ".": "./dist/handlers/handlers.mjs",
+    "./schemas": {
+      "import": "./dist/feynmanApi.schemas.mjs",
+      "types": "./dist/feynmanApi.schemas.d.mts"
+    }
+  },
+  "types": "./dist/handlers/handlers.d.mts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "obuild"
+  },
+  "peerDependencies": {
+    "@tanstack/react-query": "^5.81.5",
+    "axios": "^1.10.0"
+  },
+  "devDependencies": {
+    "@orval/core": "^7.10.0",
+    "obuild": "^0.2.1",
+    "typescript": "^5.8.3"
+  },
+  "packageManager": "pnpm@10.12.4"
+}

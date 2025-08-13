@@ -24,6 +24,7 @@ Cargo.lock
 
 node_modules
 .react-router
+dist
 
 # dev
 grinchset.txt

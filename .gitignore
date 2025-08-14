@@ -24,8 +24,7 @@ Cargo.lock
 
 node_modules
 .react-router
+dist
 
 # dev
 grinchset.txt
-docker-compose.yaml
-services/api/prompts

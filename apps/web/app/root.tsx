@@ -16,7 +16,6 @@ import { LayoutProvider } from "@revlentless/ui-theme/providers/layout-provider"
 import "@revlentless/ui/globals.css";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
-import { MockDataProvider } from "~/providers/mock-data-provider";
 import { FeynmanProvider } from "~/providers/feynman-provider";
 
 export const links: Route.LinksFunction = () => [
@@ -58,9 +57,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
           >
             <ActiveThemeProvider>
               <LayoutProvider>
-                <MockDataProvider>
-                  <FeynmanProvider>{children}</FeynmanProvider>
-                </MockDataProvider>
+                <FeynmanProvider>{children}</FeynmanProvider>
                 <ScrollRestoration />
                 <Scripts />
               </LayoutProvider>

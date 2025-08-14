@@ -1,294 +1,205 @@
-use crate::reviewer::Reviewer;
-use crate::topic::{SubTopic, SubTopicList};
-use anyhow::Result;
-use rmcp::tool_handler;
+//! Feynman Agent Service
+//!
+//! This module implements the core Feynman learning agent that tracks educational progress
+//! through subtopics using the Model Context Protocol (MCP). The agent follows the Feynman
+//! technique principle of breaking down complex topics into understandable components.
+
+use crate::topic::SubTopic;
 use rmcp::{
     ServerHandler,
     handler::server::{router::tool::ToolRouter, tool::Parameters},
     model::{ServerCapabilities, ServerInfo},
-    tool, tool_router,
+    tool, tool_handler, tool_router,
 };
 use schemars::JsonSchema;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
+use tokio::sync::mpsc;
+use tracing::info;
 
 // --- Agent State ---
 
-/// Represents the persistent state of the Feynman teaching session.
-/// This struct holds the progress of the user's teaching, including which
-/// subtopics have been covered, which are still incomplete, and the overall topic.
+/// Core state representation of the Feynman learning agent.
+///
+/// This struct tracks the overall learning progress for a main topic by managing
+/// collections of subtopics in different completion states.
+#[derive(Serialize, Deserialize, JsonSchema, Debug, Clone)]
 pub struct FeynmanAgent {
+    /// The main topic or subject area being studied (e.g., "Data Structures").
     pub main_topic: String,
-    pub subtopic_list: SubTopicList,
+    /// Subtopics that have been completely mastered across all criteria.
     pub covered_subtopics: HashMap<String, SubTopic>,
+    /// Subtopics that are still being learned or have incomplete coverage.
     pub incomplete_subtopics: HashMap<String, SubTopic>,
 }
 
 impl FeynmanAgent {
-    /// Creates a new FeynmanAgent for a given topic and its subtopics.
-    pub fn new(main_topic: String, subtopic_list: SubTopicList) -> Self {
-        // Initially, all subtopics are considered incomplete.
-        let incomplete_subtopics = subtopic_list
-            .subtopics
-            .iter()
-            .map(|st| (st.name.clone(), st.clone()))
+    /// Creates a new Feynman agent for a specific topic.
+    ///
+    /// All provided subtopics start in the incomplete state and must be
+    /// progressively marked as complete through the learning process.
+    pub fn new(main_topic: String, subtopics: Vec<SubTopic>) -> Self {
+        let incomplete_subtopics = subtopics
+            .into_iter()
+            .map(|st| (st.name.clone(), st))
             .collect();
-
         Self {
             main_topic,
-            subtopic_list,
             covered_subtopics: HashMap::new(),
             incomplete_subtopics,
         }
     }
 }
 
+// --- Data Structures for Tools ---
+
+/// Arguments for updating the learning status of a specific subtopic criterion.
+///
+/// This struct is used by the `update_subtopic_status` MCP tool to modify
+/// the completion state of individual learning criteria within subtopics.
+#[derive(Deserialize, JsonSchema, Debug)]
+pub struct UpdateSubtopicStatusArgs {
+    /// The name of the subtopic to update (must match a subtopic in the agent state).
+    pub subtopic_name: String,
+    /// The learning criterion to update: 'definition', 'mechanism', or 'example'.
+    #[schemars(description = "The criterion to update: 'definition', 'mechanism', or 'example'")]
+    pub criterion: String,
+    /// Whether this criterion has been satisfied (true) or not (false).
+    #[schemars(description = "The new status: true if covered, false if not")]
+    pub is_covered: bool,
+}
+
 // --- Service and Handler Implementation ---
 
-/// The main service that implements the MCP ServerHandler.
-/// It holds the agent's state and dependencies (like the reviewer), and exposes
-/// its capabilities as MCP tools.
+/// The main service implementation for the Feynman learning agent.
+///
+/// This service provides MCP (Model Context Protocol) tools that allow external
+/// agents (like an LLM) to interact with and modify the learning state.
 pub struct FeynmanService {
+    /// Shared agent state protected by an async mutex for concurrent access.
     pub agent_state: Arc<tokio::sync::Mutex<FeynmanAgent>>,
-    pub reviewer: Arc<dyn Reviewer>,
+    /// Optional channel for broadcasting state changes to subscribers.
+    pub state_tx: Option<mpsc::Sender<FeynmanAgent>>,
+    /// MCP tool router for handling incoming tool calls.
     tool_router: ToolRouter<Self>,
 }
 
 #[tool_handler]
 impl ServerHandler for FeynmanService {
-    /// Provides information about the server, including its capabilities.
-    /// This tells the client that this server supports tools.
+    /// Returns server information and capabilities, advertising tool support.
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
             capabilities: ServerCapabilities::builder().enable_tools().build(),
-            instructions: Some(
-                "A teaching assistant agent that helps you practice the Feynman technique.".into(),
-            ),
             ..Default::default()
         }
     }
 }
 
-// --- Argument Structs for Tools ---
-
-#[derive(Deserialize, JsonSchema)]
-pub struct SendMessageArgs {
-    pub text: String,
-}
-
-#[derive(Deserialize, JsonSchema)]
-pub struct AnalyzeTopicArgs {
-    pub segment: String,
-    pub subtopics: Vec<String>,
-}
-
-#[derive(Deserialize, JsonSchema)]
-pub struct GenerateSubtopicsArgs {
-    pub topic: String,
-}
-
-#[derive(Deserialize, JsonSchema)]
-pub struct AnalyzeAnswerArgs {
-    pub question: String,
-    pub answer: String,
-}
-
-#[derive(Deserialize, JsonSchema)]
-pub struct LooksLikeTopicChangeArgs {
-    pub context_buffer: String,
-    pub new_segment: String,
-}
-
-#[derive(Deserialize, JsonSchema)]
-pub struct CheckAnswerSatisfiesQuestionArgs {
-    pub segment: String,
-    pub question: String,
-}
-
-#[derive(Deserialize, JsonSchema)]
-pub struct AnalyzeLastExplainedContextArgs {
-    pub segment: String,
-    pub main_topic: String,
-    pub subtopic_list: Vec<String>,
-}
-
-// --- Tool Implementations ---
-
 #[tool_router]
 impl FeynmanService {
+    /// Creates a new Feynman service instance.
     pub fn new(
         agent_state: Arc<tokio::sync::Mutex<FeynmanAgent>>,
-        reviewer: Arc<dyn Reviewer>,
+        state_tx: Option<mpsc::Sender<FeynmanAgent>>,
     ) -> Self {
         Self {
             agent_state,
-            reviewer,
+            state_tx,
             tool_router: Self::tool_router(),
         }
     }
 
-    /// Processes a user's message, acting as the main entry point for the agent's logic loop.
-    #[tool(description = "Send a message to the Feynman agent to continue the lesson.")]
-    pub async fn send_message(&self, args: Parameters<SendMessageArgs>) -> Result<String, String> {
-        // This tool now contains the "agent loop" logic.
-        // It constructs a prompt and simulates an LLM call.
-        // In a real scenario, this would involve a call to an LLM client,
-        // which would then decide which other tools to call.
-
+    /// Retrieves the current status of the entire learning session.
+    ///
+    /// This tool provides a complete snapshot of the agent's state, including
+    /// all subtopics and their current completion status.
+    #[tool(
+        description = "Get the current status of the teaching session, including all complete and incomplete subtopics."
+    )]
+    pub async fn get_session_status(&self) -> Result<String, String> {
+        info!("Executing tool 'get_session_status'");
         let agent = self.agent_state.lock().await;
+        serde_json::to_string(&*agent)
+            .map_err(|e| format!("Failed to serialize agent state: {}", e))
+    }
 
-        let covered_list = agent
-            .covered_subtopics
-            .keys()
-            .cloned()
-            .collect::<Vec<_>>()
-            .join(", ");
-        let incomplete_list = agent
-            .incomplete_subtopics
-            .keys()
-            .cloned()
-            .collect::<Vec<_>>()
-            .join(", ");
+    /// Updates the learning status for a specific criterion of a subtopic.
+    ///
+    /// This is the core tool for tracking learning progress. It allows an LLM
+    /// to mark individual learning criteria (definition, mechanism, example)
+    /// as complete for a specific subtopic. If all criteria for a subtopic
+    /// become complete, it is moved to the `covered_subtopics` map.
+    #[tool(
+        description = "Update the status of a specific learning criterion for a subtopic (e.g., mark 'definition' for 'Linked List' as covered)."
+    )]
+    pub async fn update_subtopic_status(
+        &self,
+        args: Parameters<UpdateSubtopicStatusArgs>,
+    ) -> Result<String, String> {
+        info!(args = ?args.0, "Executing tool 'update_subtopic_status'");
+        let mut agent = self.agent_state.lock().await;
+        let subtopic_name = &args.0.subtopic_name;
 
-        let system_prompt = format!(
-            r#"You are a student learning about the topic: "{}". Your goal is to understand it thoroughly by asking clarifying questions.
-The teacher (the user) will explain concepts to you. Your job is to use the available tools to analyze their explanations.
-
-Current user message: "{}"
-
-Session Progress:
-- Main Topic: {}
-- Subtopics fully covered: {}
-- Subtopics partially covered or not started: {}
-
-Instructions:
-1. Listen to the user's explanation.
-2. Use the `analyze_topic` tool to check if their explanation covers the definition, mechanism, and an example for any mentioned subtopics.
-3. If the analysis shows missing parts, the tool will provide questions. Ask the user these questions to fill the gaps.
-4. If the user answers a question, use the `analyze_answer` tool to see if the answer is correct.
-5. Continue this process until all subtopics are fully covered.
-6. Be encouraging and curious.
-"#,
-            agent.main_topic,
-            args.0.text,
-            agent.main_topic,
-            if covered_list.is_empty() {
-                "None yet"
-            } else {
-                &covered_list
-            },
-            if incomplete_list.is_empty() {
-                "None"
-            } else {
-                &incomplete_list
+        let result = if let Some(subtopic) = agent.incomplete_subtopics.get_mut(subtopic_name) {
+            match args.0.criterion.to_lowercase().as_str() {
+                "definition" => subtopic.has_definition = args.0.is_covered,
+                "mechanism" => subtopic.has_mechanism = args.0.is_covered,
+                "example" => subtopic.has_example = args.0.is_covered,
+                _ => return Err(format!("Invalid criterion: '{}'", args.0.criterion)),
             }
-        );
 
-        tracing::info!("--- SIMULATED LLM CALL ---");
-        tracing::info!("Generated Prompt:\n{}", system_prompt);
-        tracing::info!("--------------------------");
+            info!(subtopic = %subtopic_name, criterion = %args.0.criterion, is_covered = %args.0.is_covered, "Agent state updated");
 
-        let placeholder_response = "That's interesting! I'm analyzing your explanation now. Could you tell me more about one of the subtopics?".to_string();
+            if subtopic.is_complete() {
+                if let Some(completed) = agent.incomplete_subtopics.remove(subtopic_name) {
+                    agent
+                        .covered_subtopics
+                        .insert(subtopic_name.clone(), completed);
+                    Ok(format!(
+                        "OK. Subtopic '{}' is now fully covered.",
+                        subtopic_name
+                    ))
+                } else {
+                    Ok("OK. Status updated.".to_string())
+                }
+            } else {
+                Ok(format!(
+                    "OK. Updated criterion '{}' for subtopic '{}'.",
+                    args.0.criterion, subtopic_name
+                ))
+            }
+        } else if agent.covered_subtopics.contains_key(subtopic_name) {
+            Ok(format!(
+                "OK. Subtopic '{}' is already fully covered.",
+                subtopic_name
+            ))
+        } else {
+            Err(format!("Subtopic '{}' not found.", subtopic_name))
+        };
 
-        // Simply return the string. rmcp will handle wrapping it in the correct Content type.
-        Ok(placeholder_response)
+        if let Some(tx) = &self.state_tx {
+            if tx.send(agent.clone()).await.is_err() {
+                tracing::warn!("Failed to broadcast state update: receiver dropped.");
+            }
+        }
+
+        result
     }
 
-    /// Analyzes a user's explanation of one or more subtopics to check for completeness.
-    #[tool]
-    pub async fn analyze_topic(
-        &self,
-        args: Parameters<AnalyzeTopicArgs>,
-    ) -> Result<rmcp::Json<serde_json::Value>, String> {
-        let subtopics: Vec<SubTopic> = args.0.subtopics.into_iter().map(SubTopic::new).collect();
-        let result_str = self
-            .reviewer
-            .analyze_topic(&args.0.segment, &subtopics)
-            .await
-            .map_err(|e| e.to_string())?;
-        let json_val: serde_json::Value =
-            serde_json::from_str(&result_str).map_err(|e| e.to_string())?;
-        Ok(rmcp::Json(json_val))
-    }
-
-    /// Generates a list of key subtopics for a given main topic.
-    #[tool]
-    pub async fn generate_subtopics(
-        &self,
-        args: Parameters<GenerateSubtopicsArgs>,
-    ) -> Result<rmcp::Json<serde_json::Value>, String> {
-        let result = self
-            .reviewer
-            .generate_subtopics(&args.0.topic)
-            .await
-            .map_err(|e| e.to_string())?;
-        let json_val = serde_json::to_value(result).map_err(|e| e.to_string())?;
-        Ok(rmcp::Json(json_val))
-    }
-
-    /// Analyzes a user's answer to a specific question for correctness.
-    #[tool]
-    pub async fn analyze_answer(
-        &self,
-        args: Parameters<AnalyzeAnswerArgs>,
-    ) -> Result<rmcp::Json<serde_json::Value>, String> {
-        let result = self
-            .reviewer
-            .analyze_answer(&args.0.question, &args.0.answer)
-            .await
-            .map_err(|e| e.to_string())?;
-        let json_val = serde_json::to_value(result).map_err(|e| e.to_string())?;
-        Ok(rmcp::Json(json_val))
-    }
-
-    /// Checks if a new segment of user speech indicates a change in topic.
-    #[tool]
-    pub async fn looks_like_topic_change(
-        &self,
-        args: Parameters<LooksLikeTopicChangeArgs>,
-    ) -> Result<rmcp::Json<serde_json::Value>, String> {
-        let result_str = self
-            .reviewer
-            .looks_like_topic_change(&args.0.context_buffer, &args.0.new_segment)
-            .await
-            .map_err(|e| e.to_string())?;
-        let json_val: serde_json::Value =
-            serde_json::from_str(&result_str).map_err(|e| e.to_string())?;
-        Ok(rmcp::Json(json_val))
-    }
-
-    /// Checks if a user's explanation adequately answers a specific question.
-    #[tool]
-    pub async fn check_answer_satisfies_question(
-        &self,
-        args: Parameters<CheckAnswerSatisfiesQuestionArgs>,
-    ) -> Result<rmcp::Json<serde_json::Value>, String> {
-        let result = self
-            .reviewer
-            .check_answer_satisfies_question(&args.0.segment, &args.0.question)
-            .await
-            .map_err(|e| e.to_string())?;
-        let json_val = serde_json::to_value(result).map_err(|e| e.to_string())?;
-        Ok(rmcp::Json(json_val))
-    }
-
-    /// Provides a summary or feedback on the last piece of user explanation.
-    #[tool]
-    pub async fn analyze_last_explained_context(
-        &self,
-        args: Parameters<AnalyzeLastExplainedContextArgs>,
-    ) -> Result<rmcp::Json<serde_json::Value>, String> {
-        let result = self
-            .reviewer
-            .analyze_last_explained_context(
-                &args.0.segment,
-                &args.0.main_topic,
-                &args.0.subtopic_list,
-            )
-            .await
-            .map_err(|e| e.to_string())?;
-        let json_val = serde_json::to_value(result).map_err(|e| e.to_string())?;
-        Ok(rmcp::Json(json_val))
+    /// Concludes the learning session when all subtopics are complete.
+    ///
+    /// This tool provides a clear action for the LLM to take when the learning
+    /// session has been successfully completed, signaling that all educational
+    /// objectives have been met.
+    #[tool(
+        description = "Ends the teaching session successfully once all subtopics are fully covered."
+    )]
+    pub async fn conclude_session(&self) -> Result<String, String> {
+        info!("Executing tool 'conclude_session'");
+        // This tool's primary purpose is to give the LLM a clear action to take
+        // when the lesson is over. The actual session status update is typically
+        // handled by a separate mechanism (e.g., a REST API call).
+        Ok("OK. Session will be concluded.".to_string())
     }
 }

@@ -39,7 +39,7 @@ import {
   CommandList,
 } from "@revlentless/ui/components/command";
 import { Separator } from "@revlentless/ui/components/separator";
-import { ThemeToggle } from "@revlentless/ui-theme/components/theme-toggle";
+import { ThemeCustomizer } from "@revlentless/ui-theme/components/theme-customizer";
 import {
   Menu,
   Search,
@@ -49,6 +49,8 @@ import {
   Settings,
   LogOut,
 } from "lucide-react";
+import { ThemeToggle } from "@revlentless/ui-theme/components/theme-toggle";
+import { ThemeSelector } from "@revlentless/ui-theme/components/theme-selector";
 
 const nav = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -85,7 +87,7 @@ export default function AppShell() {
   }, [pathname]);
 
   return (
-    <div className="min-h-[100svh]">
+    <div className="min-h-[100svh] relative">
       <header className="sticky top-0 z-40 border-b bg-background/80 backdrop-blur">
         <div className="mx-auto flex max-w-[1400px] items-center gap-3 px-4 py-3">
           <div className="flex items-center gap-2">
@@ -124,7 +126,7 @@ export default function AppShell() {
             </Sheet>
 
             <Link to="/dashboard" className="hidden items-center gap-2 lg:flex">
-              <div className="flex h-8 w-8 items-center justify-center rounded bg-emerald-600 font-bold text-white">
+              <div className="flex h-8 w-8 items-center justify-center rounded bg-primary font-bold text-white">
                 F
               </div>
               <span className="text-sm font-semibold">Feynman</span>
@@ -226,6 +228,12 @@ export default function AppShell() {
       </CommandDialog>
 
       <Toaster richColors position="top-right" />
+
+      {/* dev tools */}
+      <div className="absolute bottom-1.5 right-1.5 flex flex-row gap-x-6">
+        <ThemeToggle />
+        <ThemeSelector />
+      </div>
     </div>
   );
 }
